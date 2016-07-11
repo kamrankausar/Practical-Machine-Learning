@@ -1,0 +1,90 @@
+1.Install needed packages
+
+#install.packages("data.table")
+#install.packages("caret")
+#install.packages("randomForest")
+#install.packages("foreach")
+#install.packages("rpart")
+#install.packages("rpart.plot")
+#install.packages("corrplot")
+
+2.Load needed packages
+
+library(data.table)
+library(caret)
+library(randomForest)
+library(foreach)
+library(rpart)
+library(rpart)
+library(rpart.plot)
+library(corrplot)
+
+3.Read datas
+
+training_data <- read.csv("pml-training.csv", na.strings=c("#DIV/0!"," ", "", "NA", "NAs", "NULL"))
+testing_data <- read.csv("pml-testing.csv", na.strings=c("#DIV/0!"," ", "", "NA", "NAs", "NULL"))
+
+4.Clean datas Drop NAs, Drop highly corelated variables, drop variables whose contents are the same.
+
+#4.1 Drop columns with NAs
+str(training_data)
+cleantraining <- training_data[, -which(names(training_data) %in% c("X", "user_name", "raw_timestamp_part_1", "raw_timestamp_part_2", "cvtd_timestamp", "new_window", "num_window"))]
+cleantraining = cleantraining[, colSums(is.na(cleantraining)) == 0] 
+#4.2 Drop variables with same content
+zerovariance =nearZeroVar(cleantraining[sapply(cleantraining, is.numeric)], saveMetrics=TRUE)
+cleantraining = cleantraining[, zerovariance[, 'nzv'] == 0] 
+#4.3.1 Return the correlation matrix in matrix format
+correlationmatrix <- cor(na.omit(cleantraining[sapply(cleantraining, is.numeric)]))
+dim(correlationmatrix)
+correlationmatrixdegreesoffreedom <- expand.grid(row = 1:52, col = 1:52)
+correlationmatrixdegreesoffreedom$correlation <- as.vector(correlationmatrix) 
+#4.3.2 Remove highly correlated variables(up to 0.7)
+removehighcorrelation <- findCorrelation(correlationmatrix, cutoff = .7, verbose = TRUE)
+cleantraining <- cleantraining[, -removehighcorrelation] 
+#4.4 Generally drop blanks
+for(i in c(8:ncol(cleantraining)-1)) {cleantraining[,i] = as.numeric(as.character(cleantraining[,i]))}
+
+for(i in c(8:ncol(testing_data)-1)) {testing_data[,i] = as.numeric(as.character(testing_data[,i]))} 
+#4.5 Redefine to be used data
+featureset <- colnames(cleantraining[colSums(is.na(cleantraining)) == 0])[-(1:7)]
+modeldata <- cleantraining[featureset]
+featureset 
+
+5.Build model Split 60% for training and 40% for testing.
+
+idx <- createDataPartition(modeldata$classe, p=0.6, list=FALSE )
+training <- modeldata[idx,]
+testing <- modeldata[-idx,]
+
+5 fold cross validation is used.
+
+control <- trainControl(method="cv", 5)
+model <- train(classe ~ ., data=training, method="rf", trControl=control, ntree=250)
+model
+
+6.Predict Predict by using testing data
+
+result <- predict(model, training[, -length(names(training))])
+result
+#Considering the length, this part will not be shown
+
+7.Draw Tress
+
+treeModel <- rpart(classe ~ ., data=cleantraining, method="class")
+prp(treeModel) 
+
+8.Answer the asked question
+
+pml_write_files = function(x){
+  n = length(x)
+  for(i in 1:n){
+    filename = paste0("problem_id_",i,".txt")
+    write.table(x[i],file=filename,quote=FALSE,row.names=FALSE,col.names=FALSE)
+  }
+}
+
+testing_data <- testing_data[featureset[featureset!='classe']]
+answers <- predict(model, newdata=testing_data)
+answers
+
+pml_write_files(answers)
